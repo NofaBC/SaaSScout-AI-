@@ -1,86 +1,218 @@
-SaaSScout AI™
-Match the business. Introduce the solution.
+# SaaSScout AI™ — NOFA Pilot
 
-SaaSScout AI™ is a B2B prospecting and outreach workflow prototype by NOFA AI Factory™, a NOFA Business Consulting initiative. It demonstrates how a business prospect can be matched to a relevant NOFA product and receive a personalized introduction email draft.
+This branch contains the lean NOFA pilot: Firebase owner authentication, Firestore persistence, Exa discovery, evidence-backed product matching, editable outreach, and Gmail OAuth sending with per-email approval.
 
-The entire application runs from one index.html file with embedded HTML, CSS, and JavaScript. No backend, package installation, build process, or API key is required.
-Prototype only: All prospect companies, signals, and fit scores are fictional examples. Discovery filters a built-in dataset; product matching uses fixed industry rules; emails are generated from templates. No live AI inference, prospect search, contact enrichment, Gmail connection, or automatic email sending is included.
+The original single-file prototype remains in [`index.html`](./index.html) and at <https://saasscout-ai.vercel.app/>. Production and `main` are unchanged.
 
-Features
-- Prospect discovery: Explore 14 fictional B2B businesses across hospitality, software, and government contracting.
-- Filters: Narrow results by industry, US region, signal type, and company size.
-- Search and sorting: Search company names, locations, or signal text; sort by illustrative fit score or company name.
-- Signal context: Distinguish explicit requests, inferred needs, and company-fit-only examples.
-- Suggested NOFA products: View a product recommendation and an explanation of its relevance.
-- Introduction emails: Generate editable subject lines and email bodies introducing NOFA AI Factory and the matched product.
-- Copy and download: Copy the complete email or download it as a text file. If clipboard access is unavailable, copy manually or use download.
-- Pipeline: Save prospects, add notes, and move leads through Saved, Contacted, Demo booked, and Won stages.
-- CSV exports: Export filtered prospects or saved pipeline records, including product matches and notes. Records are labeled as fictional demo data.
-- Local persistence: Save product settings, pipeline stages, and notes in browser local storage when available.
-- Responsive interface: Layout adapts to desktop and smaller screens.
-Product matching
-The prototype uses this fixed catalog:
-Business industry	Suggested product	Potential relevance
-Hospitality	JudyHotel™	Answer recurring guest questions and route service requests
-Software	CommandDesk AI™	Classify support emails and route inquiries
-Government contracting	JudyBid™	Discover and evaluate relevant contracting opportunities
+**Live integration status:** the code is implemented, but no live Exa, Firebase, or Gmail check has been performed. Credentials are not configured in this environment. Do not describe the pilot as production-verified.
 
+## Implemented
 
-Recommendations are illustrative and determined by industry, not by a live AI model. Product descriptions are not synchronized with the live showroom. All showroom links point to https://nofaaifactory.com; the prototype does not invent individual product-page URLs.
+- Firebase Google sign-in with owner-email allowlist and HttpOnly session cookie.
+- Firestore persistence for prospects, notes, stages, products, drafts, sends, activities, usage, rate limits, and duplicate-send cooldowns.
+- Firestore rules: owner-only reads, all client writes denied, server-only collections private.
+- Same-origin / Fetch Metadata protection on every state-changing route.
+- Exa on-demand discovery with a 5-search/day and 10-result/search limit. No scheduled discovery and no demo fallback.
+- Source evidence stored with each prospect: URL, retrieval date, source title, excerpt, summary, and claim type.
+- Verified-product matching using deterministic catalog/evidence overlap. **No LLM is called**, so there is no unapproved AI spend. Matching returns `no_match` when no verified product or insufficient evidence exists.
+- Editable subject/body outreach introducing NOFA Business Consulting and NOFA AI Factory™, with one verified product, showroom link, signature, and opt-out language.
+- Gmail OAuth send-only connection for the authorized owner, encrypted refresh token, connected-account display, test/live send modes, approval-before-send, duplicate blocking, and send-result recording.
+- UI for discovery, source review, product verification, draft editing, approval, sending, and connection status.
+- 32 mock/unit tests.
 
-The editable product profile sets discovery context. It does not override the fixed NOFA product matches or Farhad’s signature in introduction emails.
-Run locally
-1. Download or clone the repository.
-2. Open index.html in a modern browser.
-3. Select filters and click Discover demo prospects.
-4. Click Generate introduction email on a prospect card.
-5. Review the product recommendation, edit the subject and body, then copy or download the email.
-No terminal command or dependency installation is needed.
+## Deliberately excluded
 
-Browser-local storage behavior can vary when opening a file:// page. Static hosting provides a more consistent origin for persistence. If storage is unavailable, changes remain available only for the current session.
-Deploy to Vercel
-1. Place index.html at the repository root.
-2. Push the repository to GitHub.
-3. Import the repository into Vercel.
-4. Select Other as the framework preset if needed.
-5. Leave the build command unset and serve the repository root as the static output.
-6. Deploy.
-There are no environment variables or API credentials to configure. Other static hosting services can also serve the file.
-Repository structure
-index.html   Complete application: markup, styling, demo data, and behavior
-README.md    Project overview and usage instructions
-Email behavior
-Generated drafts introduce NOFA Business Consulting and NOFA AI Factory™, feature the industry-matched product, explain its potential relevance, and link to the showroom. The signature uses:
+- Automated follow-ups.
+- Inbox monitoring, reply detection, and bounce detection.
+- Gmail read/modify scopes.
+- Subscriptions, Stripe, paid plans, checkout.
+- Daily Top 10 AI Opportunities report.
+- Hunter or other paid contact enrichment.
+- Scheduled discovery.
 
-Farhad Nasserghodsi
-NOFA Business Consulting | NOFA AI Factory™
-nofabusinessconsulting@gmail.com
-https://nofaaifactory.com
+---
 
-The email address is signature text only. The application is not authenticated to that Gmail account and cannot send messages. Drafts avoid presenting fictional prospect signals as verified facts. Verify the business, contact, product capabilities, and relevance before using any draft for real outreach.
-Local data and privacy
-- Pipeline records, notes, and product settings use the local-storage key saasscout-v1.
-- Data is not synchronized across devices, browser profiles, or hosting domains.
-- Clearing browser storage removes locally saved information.
-- Data connections → Reset this demo workspace clears the application’s saved state after confirmation.
-- The application makes no background API requests and contains no analytics scripts or external UI dependencies.
-- External provider and showroom links open only when clicked.
-- Do not store API secrets in the HTML file or browser local storage.
-- A private source repository does not automatically make a deployed website private; configure hosting access separately if required.
-Production roadmap
-The following are planned capabilities, not implemented features:
-- Live company and evidence discovery through a provider such as Exa.
-- Business-contact enrichment through a provider such as Hunter.
-- A maintained showroom catalog with verified product descriptions and links.
-- AI-assisted matching grounded in real evidence, with source URLs and dates.
-- Secure backend handling of provider credentials and Google OAuth tokens.
-- Gmail connection, review/approval queues, and controlled sending schedules.
-- Reply and opt-out handling, duplicate prevention, and delivery-status tracking.
-- Authentication, durable account storage, and multi-user workspaces.
-Live integration requires confirming provider access, permitted usage, costs, and data availability. The prototype does not promise qualified buyers, verified contacts, email delivery, or sales outcomes.
-Validation
-The prototype was checked for JavaScript syntax and reviewed in a browser. Core checks covered filtering, saving leads, changing pipeline stages, persistence after reload, notes, and introduction-email generation. This is prototype validation, not a comprehensive production test suite.
-Ownership
-SaaSScout AI™ is a NOFA AI Factory™ concept by NOFA Business Consulting, LLC. No open-source license is granted by this README.
+## Exact environment checklist
 
-Explore the showroom: https://nofaaifactory.com
+### Firebase / application
+
+```text
+APP_URL=https://<stable-preview-host>
+OWNER_EMAIL=nofabusinessconsulting@gmail.com
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=saasscout-ai-pilot.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=saasscout-ai-pilot
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+FIREBASE_PROJECT_ID=saasscout-ai-pilot
+FIREBASE_SERVICE_ACCOUNT_JSON=...
+STORE_DRIVER=firestore
+```
+
+### Discovery
+
+```text
+EXA_API_KEY=...
+```
+
+### Gmail
+
+```text
+MAIL_MODE=gmail
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://<stable-preview-host>/api/gmail/callback
+OAUTH_TOKEN_ENCRYPTION_KEY=...
+GMAIL_SEND_MODE=test
+GMAIL_TEST_RECIPIENT=<address you control>
+```
+
+Use `MAIL_MODE=mock` only when you intentionally want the mock transport. In mock mode the application records a mock send and transmits nothing.
+
+`FIREBASE_SERVICE_ACCOUNT_JSON`, `GOOGLE_CLIENT_SECRET`, and `OAUTH_TOKEN_ENCRYPTION_KEY` are secrets. Set them directly in Vercel or a local `.env.local`; never paste them into chat or commit them.
+
+Do not configure `MOCK_OWNER_CODE` or `SESSION_SECRET`.
+
+---
+
+## Setup
+
+### 1. Firebase project
+
+Use the dedicated **`saasscout-ai-pilot`** project on the Firebase **free/Spark** plan. Do not reuse Judy or another NOFA application’s credentials.
+
+```powershell
+firebase login --reauth
+firebase projects:create saasscout-ai-pilot --display-name "SaaSScout AI Pilot"
+```
+
+In the Firebase Console:
+
+1. Authentication → Sign-in method → enable **Google**.
+2. Authentication → Settings → Authorized domains → add `localhost` and the exact preview hostname.
+3. Firestore Database → Create database → Production mode → US region.
+4. Project settings → General → add a Web app and copy the public config.
+5. Project settings → Service accounts → generate a private key JSON.
+
+Set the Firebase/application variables above, then:
+
+```powershell
+npm run seed:firestore
+npm run firebase:deploy:rules
+```
+
+The first authorized owner sign-in creates the single `members/{uid}` record. The seed script creates the workspace and three **draft, unverified** products. It does not verify products.
+
+### 2. Exa
+
+Create an Exa API key and set `EXA_API_KEY`. The implementation uses Exa Search with `category: company`, `type: auto`, up to 10 results, and limited content/highlights. No scheduled searches. No Hunter.
+
+The UI reports a clear setup message when `EXA_API_KEY` is missing. It never substitutes fictional prospects.
+
+### 3. Gmail OAuth
+
+Use the Google Cloud project associated with `saasscout-ai-pilot`.
+
+1. Enable the **Gmail API**.
+2. Configure the OAuth consent screen:
+   - User type: **External**
+   - App name: **SaaSScout AI**
+   - Support email and developer contact
+   - Authorized domain
+   - Privacy-policy URL
+3. Add `nofabusinessconsulting@gmail.com` as a test user while the app is in Testing.
+4. Create an OAuth client of type **Web application**.
+5. Add redirect URIs:
+   - `http://localhost:3000/api/gmail/callback`
+   - `https://<stable-preview-host>/api/gmail/callback`
+6. Request only:
+   - `openid`
+   - `https://www.googleapis.com/auth/userinfo.email`
+   - `https://www.googleapis.com/auth/userinfo.profile`
+   - `https://www.googleapis.com/auth/gmail.send`
+
+No `gmail.readonly` or `gmail.modify` scope is requested. Reply, bounce, and follow-up monitoring are therefore not available.
+
+7. Generate a 32-byte encryption key locally and keep it out of chat:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+8. Set the Gmail variables above and redeploy.
+9. Connect the owner account from the Data connections page.
+10. Run the first send in `GMAIL_SEND_MODE=test` to `GMAIL_TEST_RECIPIENT` only.
+11. After the test is reviewed, set `GMAIL_SEND_MODE=live` and redeploy. Every email still requires explicit **Approve** before **Send**.
+
+If Google is in Testing mode, refresh-token lifetime is limited. For stable use, publish and verify the OAuth app. Send-only access does not require restricted-scope CASA, but standard sensitive-scope verification may still apply.
+
+### 4. Vercel preview
+
+Set the environment variables in the existing NOFA Vercel project under **Preview**. A new subscription or paid upgrade is not required. Redeploy after adding variables.
+
+The preview is protected by Vercel Authentication. Sign in with the owner Vercel account to view it.
+
+---
+
+## Tests
+
+```powershell
+npm run typecheck
+npm test
+npm run build
+```
+
+`npm test` is the **mock/unit suite**. It covers authorization, origin checks, persistence logic, dedupe, rate limits, CSV safety, validation, mock send behavior, Exa mapping, verified-product matching, outreach content, Gmail MIME construction, and send-only scope selection.
+
+It does **not** call Firebase, Firestore, Exa, Gmail, or Google. It is not proof that live integrations work.
+
+In this sandbox, Next’s type-check subprocess is blocked; the local build command is:
+
+```powershell
+$env:SKIP_TYPECHECK_BUILD='1'
+npm run build
+```
+
+`npm run typecheck` remains authoritative. Do not use the flag in CI as a substitute for type checking.
+
+---
+
+## Live checks still pending credentials
+
+1. Owner Google sign-in succeeds; a different Google account is rejected.
+2. Session cookie is `HttpOnly`, `Secure`, and `SameSite=Lax`.
+3. Saved prospects and stages persist across sessions in Firestore.
+4. Direct Firestore reads are denied to unauthorized users.
+5. Direct Firestore writes to `prospects` are denied for the owner browser.
+6. `private`, `rateLimits`, `recipientCooldowns`, `prospectDomains`, and `contactEmails` are unreadable from clients.
+7. Cross-origin POST/PATCH returns **403**.
+8. Live Exa search returns real companies with source URLs/dates, or an honest empty/error result.
+9. Duplicate domains are rejected.
+10. A verified product can be matched; an unverified product cannot.
+11. A draft is editable; editing resets approval.
+12. Gmail OAuth connects exactly `nofabusinessconsulting@gmail.com`.
+13. Test-mode send reaches only the configured test recipient.
+14. Duplicate send is blocked; uncertain results are not auto-retried.
+15. No Gmail read scope is granted.
+
+None of these have been marked passed.
+
+---
+
+## Current blockers
+
+- Firebase CLI credentials are expired; project creation and rules deployment require owner re-auth.
+- Vercel token on disk is invalid; preview environment variables must be set by the owner.
+- No Firebase service account is available in this environment.
+- No Exa or Google OAuth credentials are available.
+- No Java runtime is available for the Firestore emulator, so rules have not been executed.
+- The Vercel preview is protected and could not be opened without a Vercel session.
+- No NOFA product has been verified yet; live matching and outreach therefore return `no_match`.
+
+## Cost status
+
+- No paid services were created.
+- No Firebase upgrade was enabled.
+- No Vercel upgrade was purchased.
+- No AI provider is called by this implementation.
+- Exa is optional and remains unconfigured; any future Exa usage is pay-as-you-go.
+- Gmail API usage is free for this pilot, subject to Google quotas and policies.

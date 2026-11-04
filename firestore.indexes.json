@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "prospects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "stage", "order": "ASC" },
+        { "fieldPath": "updatedAt", "order": "DESC" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

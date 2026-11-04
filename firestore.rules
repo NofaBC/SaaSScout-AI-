@@ -1,0 +1,27 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(workspaceId) {
+      return request.auth != null
+        && request.auth.token.email is string
+        && request.auth.token.email == get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerEmail
+        && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid));
+    }
+
+    match /workspaces/{workspaceId} {
+      allow read: if isOwner(workspaceId);
+      allow write: if false;
+
+      match /{collection}/{documentId} {
+        allow read: if isOwner(workspaceId)
+          && collection != 'private'
+          && collection != 'rateLimits'
+          && collection != 'recipientCooldowns'
+          && collection != 'prospectDomains'
+          && collection != 'contactEmails';
+        allow write: if false;
+      }
+    }
+  }
+}
