@@ -1,101 +1,157 @@
-# SaaSScout AI™ — NOFA Foundation Checkpoint
+# SaaSScout AI™ — NOFA Pilot
 
-This branch is the **Firebase foundation checkpoint** for the lean NOFA pilot. It is not the production application, and real discovery, AI matching, and Gmail sending remain disabled.
+This branch contains the lean NOFA pilot: Firebase owner authentication, Firestore persistence, Exa discovery, evidence-backed product matching, editable outreach, and Gmail OAuth sending with per-email approval.
 
 The original single-file prototype remains in [`index.html`](./index.html) and at <https://saasscout-ai.vercel.app/>. Production and `main` are unchanged.
 
-## Implemented in this checkpoint
+**Live integration status:** the code is implemented, but no live Exa, Firebase, or Gmail check has been performed. Credentials are not configured in this environment. Do not describe the pilot as production-verified.
 
-- **Firebase Authentication** with Google sign-in.
-- Server-created **Firebase session cookie** (`__session`) using the Admin SDK.
-- Owner-email allowlist for `nofabusinessconsulting@gmail.com`.
-- **Firestore persistence** for prospects, notes, stages, products, drafts, sends, activities, usage, rate limits, and duplicate-send records.
-- Firestore authorization rules with owner-only reads and **all client writes denied**.
-- Explicit **same-origin / Fetch Metadata** protection on state-changing routes.
-- Server-only Firebase Admin configuration; no service account in client code.
-- CSV export with formula-injection neutralization.
-- Mock mail boundary retained; no Gmail OAuth, token, or real send.
-- Unit tests for authorization, origin checks, persistence logic, dedupe, rate limits, CSV, validation, and mock send behavior.
+## Implemented
 
-## Not yet verified or enabled
+- Firebase Google sign-in with owner-email allowlist and HttpOnly session cookie.
+- Firestore persistence for prospects, notes, stages, products, drafts, sends, activities, usage, rate limits, and duplicate-send cooldowns.
+- Firestore rules: owner-only reads, all client writes denied, server-only collections private.
+- Same-origin / Fetch Metadata protection on every state-changing route.
+- Exa on-demand discovery with a 5-search/day and 10-result/search limit. No scheduled discovery and no demo fallback.
+- Source evidence stored with each prospect: URL, retrieval date, source title, excerpt, summary, and claim type.
+- Verified-product matching using deterministic catalog/evidence overlap. **No LLM is called**, so there is no unapproved AI spend. Matching returns `no_match` when no verified product or insufficient evidence exists.
+- Editable subject/body outreach introducing NOFA Business Consulting and NOFA AI Factory™, with one verified product, showroom link, signature, and opt-out language.
+- Gmail OAuth send-only connection for the authorized owner, encrypted refresh token, connected-account display, test/live send modes, approval-before-send, duplicate blocking, and send-result recording.
+- UI for discovery, source review, product verification, draft editing, approval, sending, and connection status.
+- 32 mock/unit tests.
 
-- No live Firebase project has been created from this environment.
-- No production Firestore rules deployment has been performed.
-- No live Firebase Auth login has been exercised against a real project.
-- Firestore emulator/rules tests were not run because the environment has no Java runtime.
-- Vercel CLI authentication is invalid, so preview environment variables were not set.
-- The Vercel preview is protected by Vercel Authentication.
-- Real Exa, AI, and Gmail integrations remain disabled.
+## Deliberately excluded
 
-## Local setup
+- Automated follow-ups.
+- Inbox monitoring, reply detection, and bounce detection.
+- Gmail read/modify scopes.
+- Subscriptions, Stripe, paid plans, checkout.
+- Daily Top 10 AI Opportunities report.
+- Hunter or other paid contact enrichment.
+- Scheduled discovery.
 
-Requirements: Node.js 24 (the Firebase web SDK engine requirement).
+---
 
-```powershell
-npm install --ignore-scripts
+## Exact environment checklist
+
+### Firebase / application
+
+```text
+APP_URL=https://<stable-preview-host>
+OWNER_EMAIL=nofabusinessconsulting@gmail.com
+NEXT_PUBLIC_FIREBASE_API_KEY=...
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=saasscout-ai-pilot.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=saasscout-ai-pilot
+NEXT_PUBLIC_FIREBASE_APP_ID=...
+FIREBASE_PROJECT_ID=saasscout-ai-pilot
+FIREBASE_SERVICE_ACCOUNT_JSON=...
+STORE_DRIVER=firestore
 ```
 
-Create `.env.local` from `.env.example`. Do not commit it and do not paste secrets into chat.
+### Discovery
 
-### Firebase project setup (owner)
+```text
+EXA_API_KEY=...
+```
+
+### Gmail
+
+```text
+MAIL_MODE=gmail
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_REDIRECT_URI=https://<stable-preview-host>/api/gmail/callback
+OAUTH_TOKEN_ENCRYPTION_KEY=...
+GMAIL_SEND_MODE=test
+GMAIL_TEST_RECIPIENT=<address you control>
+```
+
+Use `MAIL_MODE=mock` only when you intentionally want the mock transport. In mock mode the application records a mock send and transmits nothing.
+
+`FIREBASE_SERVICE_ACCOUNT_JSON`, `GOOGLE_CLIENT_SECRET`, and `OAUTH_TOKEN_ENCRYPTION_KEY` are secrets. Set them directly in Vercel or a local `.env.local`; never paste them into chat or commit them.
+
+Do not configure `MOCK_OWNER_CODE` or `SESSION_SECRET`.
+
+---
+
+## Setup
+
+### 1. Firebase project
 
 Use the dedicated **`saasscout-ai-pilot`** project on the Firebase **free/Spark** plan. Do not reuse Judy or another NOFA application’s credentials.
 
-1. Re-authenticate the Firebase CLI:
-   ```powershell
-   firebase login --reauth
-   ```
-2. Create the project if it does not exist:
-   ```powershell
-   firebase projects:create saasscout-ai-pilot --display-name "SaaSScout AI Pilot"
-   ```
-3. In the Firebase Console:
-   - Authentication → Sign-in method → enable **Google**.
-   - Authentication → Settings → Authorized domains: add `localhost` and the exact preview hostname.
-   - Firestore Database → Create database → **Production mode** → choose a US region.
-4. Project settings → General → add a **Web app** and copy the public config values.
-5. Project settings → Service accounts → generate a private key JSON. Store it in a password manager or Vercel environment variable. Never paste it into chat or commit it.
-6. Set `.env.local` values:
-   - `NEXT_PUBLIC_FIREBASE_API_KEY`
-   - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-   - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-   - `NEXT_PUBLIC_FIREBASE_APP_ID`
-   - `FIREBASE_PROJECT_ID=saasscout-ai-pilot`
-   - `FIREBASE_SERVICE_ACCOUNT_JSON` (single-line JSON or escaped newlines)
-   - `OWNER_EMAIL=nofabusinessconsulting@gmail.com`
-   - `APP_URL=http://localhost:3000`
-   - `MAIL_MODE=mock`
-   - `STORE_DRIVER=firestore`
-7. Seed the workspace and draft catalog:
-   ```powershell
-   npm run seed:firestore
-   ```
-8. Deploy rules and indexes:
-   ```powershell
-   npm run firebase:deploy:rules
-   ```
-9. Start the app:
-   ```powershell
-   npm run dev
-   ```
-10. Sign in with `nofabusinessconsulting@gmail.com`. The first successful owner sign-in creates the only member record.
+```powershell
+firebase login --reauth
+firebase projects:create saasscout-ai-pilot --display-name "SaaSScout AI Pilot"
+```
 
-### Vercel preview environment
+In the Firebase Console:
 
-Set these in the existing NOFA Vercel project under the **Preview** environment. A new subscription or paid upgrade is not required.
+1. Authentication → Sign-in method → enable **Google**.
+2. Authentication → Settings → Authorized domains → add `localhost` and the exact preview hostname.
+3. Firestore Database → Create database → Production mode → US region.
+4. Project settings → General → add a Web app and copy the public config.
+5. Project settings → Service accounts → generate a private key JSON.
 
-- `APP_URL` — exact stable preview URL.
-- `OWNER_EMAIL`
-- `NEXT_PUBLIC_FIREBASE_API_KEY`
-- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
-- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
-- `NEXT_PUBLIC_FIREBASE_APP_ID`
-- `FIREBASE_PROJECT_ID`
-- `FIREBASE_SERVICE_ACCOUNT_JSON` — secret; do not expose to the browser.
-- `MAIL_MODE=mock`
-- `STORE_DRIVER=firestore`
+Set the Firebase/application variables above, then:
 
-Do **not** configure `MOCK_OWNER_CODE` or `SESSION_SECRET`; the mock login path has been removed.
+```powershell
+npm run seed:firestore
+npm run firebase:deploy:rules
+```
+
+The first authorized owner sign-in creates the single `members/{uid}` record. The seed script creates the workspace and three **draft, unverified** products. It does not verify products.
+
+### 2. Exa
+
+Create an Exa API key and set `EXA_API_KEY`. The implementation uses Exa Search with `category: company`, `type: auto`, up to 10 results, and limited content/highlights. No scheduled searches. No Hunter.
+
+The UI reports a clear setup message when `EXA_API_KEY` is missing. It never substitutes fictional prospects.
+
+### 3. Gmail OAuth
+
+Use the Google Cloud project associated with `saasscout-ai-pilot`.
+
+1. Enable the **Gmail API**.
+2. Configure the OAuth consent screen:
+   - User type: **External**
+   - App name: **SaaSScout AI**
+   - Support email and developer contact
+   - Authorized domain
+   - Privacy-policy URL
+3. Add `nofabusinessconsulting@gmail.com` as a test user while the app is in Testing.
+4. Create an OAuth client of type **Web application**.
+5. Add redirect URIs:
+   - `http://localhost:3000/api/gmail/callback`
+   - `https://<stable-preview-host>/api/gmail/callback`
+6. Request only:
+   - `openid`
+   - `https://www.googleapis.com/auth/userinfo.email`
+   - `https://www.googleapis.com/auth/userinfo.profile`
+   - `https://www.googleapis.com/auth/gmail.send`
+
+No `gmail.readonly` or `gmail.modify` scope is requested. Reply, bounce, and follow-up monitoring are therefore not available.
+
+7. Generate a 32-byte encryption key locally and keep it out of chat:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+8. Set the Gmail variables above and redeploy.
+9. Connect the owner account from the Data connections page.
+10. Run the first send in `GMAIL_SEND_MODE=test` to `GMAIL_TEST_RECIPIENT` only.
+11. After the test is reviewed, set `GMAIL_SEND_MODE=live` and redeploy. Every email still requires explicit **Approve** before **Send**.
+
+If Google is in Testing mode, refresh-token lifetime is limited. For stable use, publish and verify the OAuth app. Send-only access does not require restricted-scope CASA, but standard sensitive-scope verification may still apply.
+
+### 4. Vercel preview
+
+Set the environment variables in the existing NOFA Vercel project under **Preview**. A new subscription or paid upgrade is not required. Redeploy after adding variables.
+
+The preview is protected by Vercel Authentication. Sign in with the owner Vercel account to view it.
+
+---
 
 ## Tests
 
@@ -105,47 +161,58 @@ npm test
 npm run build
 ```
 
-`npm test` is the **mock/unit suite** and does not call Firebase, Firestore, Exa, an AI provider, Gmail, or Google. It must not be presented as proof that live integrations work.
+`npm test` is the **mock/unit suite**. It covers authorization, origin checks, persistence logic, dedupe, rate limits, CSV safety, validation, mock send behavior, Exa mapping, verified-product matching, outreach content, Gmail MIME construction, and send-only scope selection.
 
-In this sandbox, Next’s type-check subprocess is blocked, so the local build command is:
+It does **not** call Firebase, Firestore, Exa, Gmail, or Google. It is not proof that live integrations work.
+
+In this sandbox, Next’s type-check subprocess is blocked; the local build command is:
 
 ```powershell
 $env:SKIP_TYPECHECK_BUILD='1'
 npm run build
 ```
 
-`npm run typecheck` remains authoritative. Do not set this flag in CI as a substitute for type checking.
+`npm run typecheck` remains authoritative. Do not use the flag in CI as a substitute for type checking.
 
-## Live verification required after owner setup
+---
 
-These are the checks that still need a real Firebase project:
+## Live checks still pending credentials
 
-1. Sign in with the authorized owner Google account.
-2. Confirm the session cookie is `HttpOnly`, `Secure`, and `SameSite=Lax`.
-3. Save a prospect, reload, and confirm it persists in Firestore.
-4. Sign in with a different Google account and confirm the server rejects it.
-5. Read Firestore directly with an unauthorized account and confirm rules deny access.
-6. Attempt a client-side write to `workspaces/nofa/prospects` and confirm it is denied.
-7. Confirm `private`, `rateLimits`, `recipientCooldowns`, `prospectDomains`, and `contactEmails` are unreadable from the client.
-8. Confirm a cross-origin POST/PATCH is rejected with **403**.
-9. Confirm the preview has no real Gmail token and `MAIL_MODE=mock`.
+1. Owner Google sign-in succeeds; a different Google account is rejected.
+2. Session cookie is `HttpOnly`, `Secure`, and `SameSite=Lax`.
+3. Saved prospects and stages persist across sessions in Firestore.
+4. Direct Firestore reads are denied to unauthorized users.
+5. Direct Firestore writes to `prospects` are denied for the owner browser.
+6. `private`, `rateLimits`, `recipientCooldowns`, `prospectDomains`, and `contactEmails` are unreadable from clients.
+7. Cross-origin POST/PATCH returns **403**.
+8. Live Exa search returns real companies with source URLs/dates, or an honest empty/error result.
+9. Duplicate domains are rejected.
+10. A verified product can be matched; an unverified product cannot.
+11. A draft is editable; editing resets approval.
+12. Gmail OAuth connects exactly `nofabusinessconsulting@gmail.com`.
+13. Test-mode send reaches only the configured test recipient.
+14. Duplicate send is blocked; uncertain results are not auto-retried.
+15. No Gmail read scope is granted.
+
+None of these have been marked passed.
+
+---
 
 ## Current blockers
 
-- Firebase CLI credentials are expired; project creation and rules deployment require `firebase login --reauth`.
-- Vercel CLI credentials on disk are invalid; preview environment variables must be set through the Vercel dashboard or a valid project token.
+- Firebase CLI credentials are expired; project creation and rules deployment require owner re-auth.
+- Vercel token on disk is invalid; preview environment variables must be set by the owner.
 - No Firebase service account is available in this environment.
-- No Java runtime is available for the Firestore emulator.
+- No Exa or Google OAuth credentials are available.
+- No Java runtime is available for the Firestore emulator, so rules have not been executed.
+- The Vercel preview is protected and could not be opened without a Vercel session.
+- No NOFA product has been verified yet; live matching and outreach therefore return `no_match`.
 
-## Security model
+## Cost status
 
-- Firebase Auth identity, owner-email check, and Firebase session cookie verification.
-- Firestore rules deny all client writes and server-only collections.
-- All mutations use authenticated server routes with same-origin checks.
-- Secrets remain server-side; `NEXT_PUBLIC_*` contains only Firebase web configuration.
-- Mock mail cannot contact Google.
-- No production deployment, merge, paid upgrade, or shared credential change was made.
-
-## Next checkpoint
-
-Finish live Firebase verification with the owner-provided project/config, then proceed to Exa discovery with strict limits.
+- No paid services were created.
+- No Firebase upgrade was enabled.
+- No Vercel upgrade was purchased.
+- No AI provider is called by this implementation.
+- Exa is optional and remains unconfigured; any future Exa usage is pay-as-you-go.
+- Gmail API usage is free for this pilot, subject to Google quotas and policies.

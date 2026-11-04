@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { mailMode } from "./config";
+import { HttpError } from "./errors";
+import {
+  gmailOAuthConfigured,
+  getGmailStatus,
+  sendGmailMessage,
+} from "./gmail";
 
 export interface MailInput {
   from: string;
@@ -49,15 +55,38 @@ export class MockMailer implements Mailer {
   }
 }
 
-export class GmailNotConfiguredError extends Error {
-  readonly code = "GMAIL_NOT_CONFIGURED";
+export class GmailMailer implements Mailer {
+  readonly provider = "gmail" as const;
+
+  async status() {
+    const status = await getGmailStatus();
+    return {
+      connected: status.connected,
+      email: status.email,
+      mode: "gmail" as const,
+      scopes: status.scopes,
+    };
+  }
+
+  async send(input: MailInput): Promise<MailResult> {
+    return sendGmailMessage({
+      to: input.to,
+      subject: input.subject,
+      body: input.body,
+    });
+  }
 }
 
 export function getMailer(): Mailer {
   if (mailMode() === "gmail") {
-    throw new GmailNotConfiguredError(
-      "Gmail OAuth is not configured in this checkpoint. Set MAIL_MODE=mock or complete Phase 4.",
-    );
+    if (!gmailOAuthConfigured()) {
+      throw new HttpError(
+        503,
+        "Gmail is not configured. Set the Google OAuth and token-encryption environment variables.",
+        "GMAIL_NOT_CONFIGURED",
+      );
+    }
+    return new GmailMailer();
   }
   return new MockMailer();
 }

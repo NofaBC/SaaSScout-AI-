@@ -76,6 +76,19 @@ export const productPatchSchema = z.object({
   ),
 });
 
+export const discoverySchema = z.object({
+  industry: z.string().trim().max(80).default(""),
+  location: z.string().trim().max(140).default(""),
+  keywords: z.string().trim().max(300).default(""),
+  buyerRole: z.string().trim().max(120).default(""),
+  maxResults: z.number().int().min(1).max(10).default(10),
+});
+
+export const draftUpdateSchema = z.object({
+  subject: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(20).max(20_000),
+});
+
 export const sendSchema = z.object({
   recipient: z.string().trim().email().max(254),
 });

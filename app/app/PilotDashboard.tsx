@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { signOutOwner } from "@/lib/firebase/client";
+import type { MatchResult } from "@/lib/matching";
 import type {
   ClaimType,
+  Draft,
   Product,
   Prospect,
   Stage,
@@ -37,6 +39,34 @@ const EMPTY_FORM = {
   notes: "",
 };
 
+const EMPTY_DISCOVERY = {
+  industry: "",
+  location: "",
+  keywords: "",
+  buyerRole: "",
+  maxResults: "10",
+};
+
+interface GmailStatus {
+  configured: boolean;
+  connected: boolean;
+  email: string | null;
+  scopes: string[];
+  connectedAt: string | null;
+  sendMode: "test" | "live";
+  testRecipient: string | null;
+  setupMessage: string | null;
+}
+
+interface DraftReview {
+  draft: Draft;
+  product: Product;
+  match: MatchResult;
+  recipient: string;
+  dirty: boolean;
+  result: string;
+}
+
 export default function PilotDashboard({
   initial,
   ownerEmail,
@@ -48,14 +78,21 @@ export default function PilotDashboard({
 }) {
   const [tab, setTab] = useState<Tab>("discover");
   const [prospects, setProspects] = useState(initial.prospects);
-  const [products] = useState(initial.products);
+  const [products, setProducts] = useState(initial.products);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [discoveryForm, setDiscoveryForm] = useState(EMPTY_DISCOVERY);
   const [busy, setBusy] = useState(false);
+  const [discoveryBusy, setDiscoveryBusy] = useState(false);
   const [error, setError] = useState("");
+  const [discoveryMessage, setDiscoveryMessage] = useState("");
   const [toast, setToast] = useState("");
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>(() =>
     Object.fromEntries(initial.prospects.map((p) => [p.id, p.notes])),
   );
+  const [gmailStatus, setGmailStatus] = useState<GmailStatus | null>(null);
+  const [gmailError, setGmailError] = useState("");
+  const [draftReview, setDraftReview] = useState<DraftReview | null>(null);
+  const [draftBusy, setDraftBusy] = useState(false);
 
   const explicitCount = useMemo(
     () => prospects.filter((p) => p.evidence[0]?.claimType === "explicit_request").length,
@@ -66,13 +103,39 @@ export default function PilotDashboard({
     [products],
   );
 
+  useEffect(() => {
+    let active = true;
+    fetch("/api/gmail/status")
+      .then(async (response) => {
+        const data = (await response.json()) as GmailStatus & { error?: string };
+        if (!response.ok) {
+          if (active) setGmailError(data.error ?? "Gmail status is unavailable.");
+          return;
+        }
+        if (active) setGmailStatus(data);
+      })
+      .catch(() => {
+        if (active) setGmailError("Could not reach the Gmail status endpoint.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   function flash(message: string) {
     setToast(message);
-    window.setTimeout(() => setToast(""), 3500);
+    window.setTimeout(() => setToast(""), 4000);
   }
 
   function updateForm<K extends keyof typeof EMPTY_FORM>(key: K, value: (typeof EMPTY_FORM)[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateDiscovery<K extends keyof typeof EMPTY_DISCOVERY>(
+    key: K,
+    value: (typeof EMPTY_DISCOVERY)[K],
+  ) {
+    setDiscoveryForm((current) => ({ ...current, [key]: value }));
   }
 
   async function addProspect(event: React.FormEvent<HTMLFormElement>) {
@@ -110,6 +173,48 @@ export default function PilotDashboard({
     }
   }
 
+  async function discover(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDiscoveryBusy(true);
+    setDiscoveryMessage("");
+    try {
+      const response = await fetch("/api/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...discoveryForm,
+          maxResults: Number(discoveryForm.maxResults),
+        }),
+      });
+      const data = (await response.json()) as {
+        created?: Prospect[];
+        skipped?: number;
+        message?: string;
+        error?: string;
+        code?: string;
+      };
+      if (!response.ok) {
+        setDiscoveryMessage(data.error ?? "Discovery failed.");
+        return;
+      }
+      const created = data.created ?? [];
+      setProspects((current) => [...created, ...current]);
+      setNoteDrafts((current) => ({
+        ...current,
+        ...Object.fromEntries(created.map((prospect) => [prospect.id, prospect.notes])),
+      }));
+      setDiscoveryMessage(
+        created.length
+          ? `${created.length} live prospects added${data.skipped ? `; ${data.skipped} duplicate(s) skipped` : ""}.`
+          : data.message ?? "No supported discoveries were found. No demo data was substituted.",
+      );
+    } catch {
+      setDiscoveryMessage("Could not reach the discovery endpoint.");
+    } finally {
+      setDiscoveryBusy(false);
+    }
+  }
+
   async function patchProspect(id: string, patch: { stage?: Stage; notes?: string }) {
     const response = await fetch(`/api/prospects/${id}`, {
       method: "PATCH",
@@ -123,6 +228,189 @@ export default function PilotDashboard({
     }
     setProspects((current) => current.map((p) => (p.id === id ? data.prospect! : p)));
     flash(patch.notes !== undefined ? "Notes saved." : "Pipeline stage updated.");
+  }
+
+  async function openMatch(prospect: Prospect) {
+    setDraftBusy(true);
+    setDraftReview(null);
+    try {
+      const response = await fetch(`/api/prospects/${prospect.id}/match`, { method: "POST" });
+      const data = (await response.json()) as {
+        match?: MatchResult;
+        draft?: Draft;
+        product?: Product;
+        error?: string;
+      };
+      if (!response.ok || !data.match) {
+        flash(data.error ?? "Matching failed.");
+        return;
+      }
+      if (data.match.status !== "match" || !data.draft || !data.product) {
+        flash(data.match.rationale);
+        return;
+      }
+      setDraftReview({
+        draft: data.draft,
+        product: data.product,
+        match: data.match,
+        recipient: prospect.contactEmail ?? "",
+        dirty: false,
+        result: "",
+      });
+    } catch {
+      flash("Could not reach the matching endpoint.");
+    } finally {
+      setDraftBusy(false);
+    }
+  }
+
+  function updateDraftField(field: "recipient" | "subject" | "body", value: string) {
+    setDraftReview((current) => {
+      if (!current) return current;
+      if (field === "recipient") return { ...current, recipient: value };
+      return {
+        ...current,
+        dirty: true,
+        draft: { ...current.draft, [field]: value },
+      };
+    });
+  }
+
+  async function saveDraft(): Promise<Draft | null> {
+    if (!draftReview) return null;
+    setDraftBusy(true);
+    try {
+      const response = await fetch(`/api/drafts/${draftReview.draft.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: draftReview.draft.subject,
+          body: draftReview.draft.body,
+        }),
+      });
+      const data = (await response.json()) as { draft?: Draft; error?: string };
+      if (!response.ok || !data.draft) {
+        flash(data.error ?? "Could not save the draft.");
+        return null;
+      }
+      setDraftReview((current) =>
+        current ? { ...current, draft: data.draft!, dirty: false } : current,
+      );
+      flash("Draft saved. Approval is required again.");
+      return data.draft;
+    } catch {
+      flash("Could not reach the draft endpoint.");
+      return null;
+    } finally {
+      setDraftBusy(false);
+    }
+  }
+
+  async function approveDraft() {
+    if (!draftReview) return;
+    let draft = draftReview.draft;
+    if (draftReview.dirty) {
+      const saved = await saveDraft();
+      if (!saved) return;
+      draft = saved;
+    }
+    setDraftBusy(true);
+    try {
+      const response = await fetch(`/api/drafts/${draft.id}/approve`, { method: "POST" });
+      const data = (await response.json()) as { draft?: Draft; error?: string };
+      if (!response.ok || !data.draft) {
+        flash(data.error ?? "Could not approve the draft.");
+        return;
+      }
+      setDraftReview((current) => (current ? { ...current, draft: data.draft!, dirty: false } : current));
+      flash("Draft approved. You may now send this version.");
+    } catch {
+      flash("Could not reach the approval endpoint.");
+    } finally {
+      setDraftBusy(false);
+    }
+  }
+
+  async function sendDraft() {
+    if (!draftReview) return;
+    if (!draftReview.recipient) {
+      flash("Enter a recipient email before sending.");
+      return;
+    }
+    setDraftBusy(true);
+    try {
+      const response = await fetch(`/api/drafts/${draftReview.draft.id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipient: draftReview.recipient }),
+      });
+      const data = (await response.json()) as {
+        send?: { status: string; provider: string; providerMessageId?: string };
+        message?: string;
+        warning?: string;
+        error?: string;
+      };
+      const status = data.send?.status;
+      if (status === "sent") {
+        setDraftReview((current) =>
+          current
+            ? {
+                ...current,
+                draft: { ...current.draft, status: "sent" },
+                result:
+                  data.send?.provider === "mock"
+                    ? "Mock send recorded. No email was transmitted."
+                    : "Gmail accepted the message. Delivery is not confirmed.",
+              }
+            : current,
+        );
+        setProspects((current) =>
+          current.map((prospect) =>
+            prospect.id === draftReview.draft.prospectId && prospect.stage === "Saved"
+              ? { ...prospect, stage: "Contacted" }
+              : prospect,
+          ),
+        );
+      } else if (status === "uncertain") {
+        setDraftReview((current) =>
+          current
+            ? {
+                ...current,
+                draft: { ...current.draft, status: "uncertain" },
+                result: "Send result uncertain. Check Gmail Sent; do not resend.",
+              }
+            : current,
+        );
+      } else {
+        setDraftReview((current) =>
+          current
+            ? {
+                ...current,
+                draft: { ...current.draft, status: "failed" },
+                result: data.error ?? "Send failed.",
+              }
+            : current,
+        );
+      }
+    } catch {
+      flash("Could not reach the send endpoint.");
+    } finally {
+      setDraftBusy(false);
+    }
+  }
+
+  async function disconnectGmail() {
+    const response = await fetch("/api/gmail/disconnect", { method: "POST" });
+    if (response.ok) {
+      setGmailStatus((current) =>
+        current
+          ? { ...current, connected: false, email: null, scopes: [], connectedAt: null }
+          : current,
+      );
+      flash("Gmail disconnected.");
+    } else {
+      flash("Could not disconnect Gmail.");
+    }
   }
 
   async function logout() {
@@ -175,13 +463,13 @@ export default function PilotDashboard({
             <strong>NOFA pilot workspace</strong>{" "}
             <span className="muted"> / Prospect intelligence</span>
           </span>
-          <span className="pill">● PHASE 1 CHECKPOINT</span>
+          <span className="pill">● PILOT</span>
         </header>
 
         <div className="notice">
-          Phase 1 checkpoint · Manual prospect intake, persistent pipeline, catalog, and CSV are
-          active. Live discovery, AI matching, and real Gmail are not connected yet. Do not enter
-          sensitive personal data.
+          Live discovery uses Exa only when configured. No demo data is substituted for failed
+          searches. Gmail requires the owner account, and every email needs explicit approval before
+          sending.
         </div>
 
         <div className="hero compact">
@@ -189,7 +477,7 @@ export default function PilotDashboard({
             <div className="eyebrow">FIND THE NEED. START THE RIGHT CONVERSATION.</div>
             <h1>Match the business. Introduce the solution.</h1>
             <p className="muted">
-              Keep evidence attached to every prospect. Nothing is inferred as buying intent.
+              Evidence stays attached to every prospect. A match is not proof of buying intent.
             </p>
           </div>
           <div className="button-row">
@@ -231,13 +519,87 @@ export default function PilotDashboard({
           <section>
             <div className="section-heading">
               <div>
-                <div className="eyebrow">PHASE 1 · MANUAL INTAKE</div>
-                <h2>Add a prospect with evidence</h2>
+                <div className="eyebrow">ON-DEMAND · STRICT LIMITS</div>
+                <h2>Find real prospects</h2>
                 <p className="muted small">
-                  This form is the temporary intake path until Exa discovery is connected. A source
-                  URL and excerpt are required. Claims are recorded as explicit, inferred, or
-                  company-fit-only.
+                  Exa search only. Five searches per day, ten results per search. No scheduled
+                  discovery and no mock fallback.
                 </p>
+              </div>
+            </div>
+
+            <form className="panel discovery-panel" onSubmit={discover}>
+              <div className="form-grid">
+                <div>
+                  <label htmlFor="discoveryIndustry">Target industry</label>
+                  <input
+                    id="discoveryIndustry"
+                    value={discoveryForm.industry}
+                    onChange={(e) => updateDiscovery("industry", e.target.value)}
+                    placeholder="Hospitality"
+                    maxLength={80}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="discoveryLocation">Location</label>
+                  <input
+                    id="discoveryLocation"
+                    value={discoveryForm.location}
+                    onChange={(e) => updateDiscovery("location", e.target.value)}
+                    placeholder="Maryland"
+                    maxLength={140}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="discoveryKeywords">Search keywords</label>
+                  <input
+                    id="discoveryKeywords"
+                    value={discoveryForm.keywords}
+                    onChange={(e) => updateDiscovery("keywords", e.target.value)}
+                    placeholder="guest messaging, support operations"
+                    maxLength={300}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="discoveryRole">Buyer role</label>
+                  <input
+                    id="discoveryRole"
+                    value={discoveryForm.buyerRole}
+                    onChange={(e) => updateDiscovery("buyerRole", e.target.value)}
+                    placeholder="General Manager"
+                    maxLength={120}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="discoveryMax">Results</label>
+                  <select
+                    id="discoveryMax"
+                    value={discoveryForm.maxResults}
+                    onChange={(e) => updateDiscovery("maxResults", e.target.value)}
+                  >
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                  </select>
+                </div>
+              </div>
+              <button className="primary" type="submit" disabled={discoveryBusy}>
+                {discoveryBusy ? "Searching…" : "Search Exa for real prospects"}
+              </button>
+              {discoveryMessage && (
+                <p className="small discovery-message" role="status">
+                  {discoveryMessage}
+                </p>
+              )}
+              <p className="small muted">
+                If Exa is not configured, this returns a setup message. It never returns fictional
+                prospects.
+              </p>
+            </form>
+
+            <div className="section-heading">
+              <div>
+                <div className="eyebrow">MANUAL INTAKE · PHASE 1 FALLBACK</div>
+                <h2>Add a prospect with evidence</h2>
               </div>
             </div>
 
@@ -415,14 +777,18 @@ export default function PilotDashboard({
               <div className="empty">
                 <h3>No prospects yet</h3>
                 <p className="muted">
-                  Add a real business with a public source. Live discovery will replace this manual
-                  intake in Phase 2.
+                  Run a live Exa search or add a real business with a public source.
                 </p>
               </div>
             ) : (
               <div className="cards">
                 {prospects.map((prospect) => (
-                  <ProspectCard key={prospect.id} prospect={prospect} />
+                  <ProspectCard
+                    key={prospect.id}
+                    prospect={prospect}
+                    onMatch={() => openMatch(prospect)}
+                    matching={draftBusy}
+                  />
                 ))}
               </div>
             )}
@@ -436,7 +802,7 @@ export default function PilotDashboard({
                 <div className="eyebrow">FROM DISCOVERY TO CONVERSATION</div>
                 <h2>My pipeline</h2>
                 <p className="muted small">
-                  Stages and notes persist for the owner workspace. Sending is not enabled here.
+                  Stages and notes persist for the owner workspace. Sending always requires approval.
                 </p>
               </div>
             </div>
@@ -508,19 +874,28 @@ export default function PilotDashboard({
                 <div className="eyebrow">VERIFIED BEFORE OUTREACH</div>
                 <h2>Product catalog</h2>
                 <p className="muted small">
-                  All three products are drafts pending owner verification. Matching and live email
-                  are blocked until at least one product is verified.
+                  Only verified products can be matched or used in an email. Verification requires
+                  owner-supplied facts and a source URL.
                 </p>
               </div>
             </div>
             <div className="cards">
               {products.map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onUpdated={(updated) =>
+                    setProducts((current) =>
+                      current.map((entry) => (entry.id === updated.id ? updated : entry)),
+                    )
+                  }
+                />
               ))}
             </div>
             <div className="notice">
-              Verification requires owner-approved capabilities, intended customers, limitations, and
-              a source URL. No product claims, pricing, images, or product-page URLs have been invented.
+              No product capabilities, pricing, images, customer results, or product-page URLs are
+              invented here. The showroom link is the only verified product destination until the
+              owner adds more.
             </div>
           </section>
         )}
@@ -529,57 +904,88 @@ export default function PilotDashboard({
           <section>
             <div className="section-heading">
               <div>
-                <div className="eyebrow">BUILT TO VALIDATE THE WORKFLOW</div>
+                <div className="eyebrow">CONFIGURATION STATUS</div>
                 <h2>Data connections</h2>
                 <p className="muted small">
-                  Credentials are not configured in this checkpoint. The application does not call
-                  external providers.
+                  Missing configuration is reported here and in the relevant action. It never falls
+                  back to fictional results.
                 </p>
               </div>
             </div>
             <div className="integration">
               <div className="row">
                 <h3>Exa · Company discovery</h3>
-                <span className="pill muted-pill">NOT CONNECTED</span>
-              </div>
-              <p className="muted">Phase 2. On-demand only, with a 5-search/day and 10-result cap.</p>
-            </div>
-            <div className="integration">
-              <div className="row">
-                <h3>AI provider · Matching and drafting</h3>
-                <span className="pill muted-pill">NOT APPROVED</span>
+                <span className="pill muted-pill">ON-DEMAND</span>
               </div>
               <p className="muted">
-                Phase 3. Proposed model: <span className="mono">claude-sonnet-5-5</span>. No calls
-                are made until Farhad approves the provider and budget.
+                Requires <span className="mono">EXA_API_KEY</span>. Limits: 5 searches/day and 10
+                results/search. No scheduled discovery.
               </p>
             </div>
             <div className="integration">
               <div className="row">
-                <h3>Gmail · Owner sending</h3>
-                <span className="pill muted-pill">MOCK ONLY</span>
+                <h3>Gmail · Owner sender</h3>
+                <span className={`pill ${gmailStatus?.connected ? "" : "muted-pill"}`}>
+                  {gmailStatus?.connected ? "CONNECTED" : "NOT CONNECTED"}
+                </span>
               </div>
-              <p className="muted">
-                Phase 4. No OAuth client, token, or real message exists yet. The mock send service
-                records attempts and blocks duplicates; it does not contact Google.
-              </p>
+              {gmailError && <p className="form-error">{gmailError}</p>}
+              {gmailStatus ? (
+                <>
+                  <p className="muted">
+                    {gmailStatus.connected
+                      ? `Connected as ${gmailStatus.email}. Send mode: ${gmailStatus.sendMode}.`
+                      : gmailStatus.setupMessage ?? "Connect the owner Google account."}
+                  </p>
+                  {gmailStatus.sendMode === "test" && gmailStatus.testRecipient && (
+                    <p className="small muted">
+                      Test mode only permits <span className="mono">{gmailStatus.testRecipient}</span>.
+                    </p>
+                  )}
+                  <div className="button-row">
+                    {!gmailStatus.connected ? (
+                      <button
+                        type="button"
+                        onClick={() => window.location.assign("/api/gmail/connect")}
+                        disabled={!gmailStatus.configured}
+                      >
+                        Connect nofabusinessconsulting@gmail.com
+                      </button>
+                    ) : (
+                      <button type="button" onClick={disconnectGmail}>
+                        Disconnect Gmail
+                      </button>
+                    )}
+                  </div>
+                  {!gmailStatus.configured && (
+                    <p className="small muted">
+                      Set <span className="mono">GOOGLE_CLIENT_ID</span>,{" "}
+                      <span className="mono">GOOGLE_CLIENT_SECRET</span>,{" "}
+                      <span className="mono">GOOGLE_REDIRECT_URI</span>, and{" "}
+                      <span className="mono">OAUTH_TOKEN_ENCRYPTION_KEY</span>.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="muted">Checking Gmail status…</p>
+              )}
             </div>
             <div className="integration">
               <div className="row">
-                <h3>Persistence</h3>
-                <span className="pill muted-pill">LOCAL JSON</span>
+                <h3>Mail transport</h3>
+                <span className="pill muted-pill">{mailMode.toUpperCase()}</span>
               </div>
               <p className="muted">
-                This checkpoint stores data in a local JSON file for development. It is not durable
-                on serverless preview. Firestore and rules are the next infrastructure step before
-                shared or production use.
+                {mailMode === "mock"
+                  ? "Mock transport is active. Sending records a mock result and transmits nothing."
+                  : "Gmail transport is selected. Real sending still requires a connected owner account and per-email approval."}
               </p>
             </div>
           </section>
         )}
 
         <p className="caption">
-          SaaSScout AI™ · A NOFA AI Factory™ concept · B2B only · Phase 1 checkpoint
+          SaaSScout AI™ · A NOFA AI Factory™ concept · B2B only · Pilot foundation
         </p>
       </main>
 
@@ -588,11 +994,114 @@ export default function PilotDashboard({
           {toast}
         </div>
       )}
+
+      {draftReview && (
+        <div className="modal-backdrop" role="presentation">
+          <div className="review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
+            <div className="row">
+              <div>
+                <div className="eyebrow">REVIEW BEFORE SENDING</div>
+                <h2 id="review-title">Outreach draft</h2>
+              </div>
+              <button type="button" onClick={() => setDraftReview(null)} aria-label="Close review">
+                ✕
+              </button>
+            </div>
+
+            <div className="review-meta">
+              <p>
+                <strong>Matched product:</strong> {draftReview.product.name}
+              </p>
+              <p className="small muted">{draftReview.match.rationale}</p>
+              <p className="small">
+                <strong>From:</strong>{" "}
+                {gmailStatus?.connected
+                  ? gmailStatus.email
+                  : "Gmail not connected — sending will be blocked"}
+              </p>
+              <p className="small">
+                <strong>Status:</strong> {draftReview.draft.status.toUpperCase()}
+              </p>
+            </div>
+
+            <label htmlFor="draftRecipient">Recipient email</label>
+            <input
+              id="draftRecipient"
+              type="email"
+              value={draftReview.recipient}
+              onChange={(e) => updateDraftField("recipient", e.target.value)}
+              placeholder="recipient@example.com"
+              maxLength={254}
+            />
+            <label htmlFor="draftSubject">Subject</label>
+            <input
+              id="draftSubject"
+              value={draftReview.draft.subject}
+              onChange={(e) => updateDraftField("subject", e.target.value)}
+              maxLength={200}
+            />
+            <label htmlFor="draftBody">Email body</label>
+            <textarea
+              id="draftBody"
+              className="review-body"
+              value={draftReview.draft.body}
+              onChange={(e) => updateDraftField("body", e.target.value)}
+              maxLength={20_000}
+            />
+
+            {draftReview.result && (
+              <p className={draftReview.draft.status === "sent" ? "send-success" : "form-error"}>
+                {draftReview.result}
+              </p>
+            )}
+
+            <div className="modal-actions">
+              <button type="button" onClick={saveDraft} disabled={draftBusy}>
+                Save draft
+              </button>
+              <button
+                type="button"
+                onClick={approveDraft}
+                disabled={draftBusy || draftReview.draft.status === "sent"}
+              >
+                Approve this version
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={sendDraft}
+                disabled={
+                  draftBusy ||
+                  draftReview.dirty ||
+                  draftReview.draft.status !== "approved" ||
+                  !draftReview.recipient
+                }
+              >
+                {mailMode === "mock" ? "Record mock send" : "Send with Gmail"}
+              </button>
+              <button type="button" onClick={() => setDraftReview(null)}>
+                Close
+              </button>
+            </div>
+            <p className="small muted">
+              Editing after approval resets the approval. Gmail acceptance is not proof of delivery.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ProspectCard({ prospect }: { prospect: Prospect }) {
+function ProspectCard({
+  prospect,
+  onMatch,
+  matching,
+}: {
+  prospect: Prospect;
+  onMatch: () => void;
+  matching: boolean;
+}) {
   const evidence = prospect.evidence[0];
   return (
     <article className="card">
@@ -628,14 +1137,63 @@ function ProspectCard({ prospect }: { prospect: Prospect }) {
         <div className="eyebrow">PIPELINE</div>
         <div className="row">
           <strong>{prospect.stage}</strong>
-          <span className="small muted">Manual evidence</span>
+          <span className="small muted">Evidence attached</span>
         </div>
       </div>
+      <button type="button" className="primary" onClick={onMatch} disabled={matching}>
+        Match verified product & draft
+      </button>
     </article>
   );
 }
 
-function ProductCard({ product }: { product: Product }) {
+function ProductCard({
+  product,
+  onUpdated,
+}: {
+  product: Product;
+  onUpdated: (product: Product) => void;
+}) {
+  const [sourceUrl, setSourceUrl] = useState(product.sourceUrl ?? "");
+  const [capabilities, setCapabilities] = useState(product.capabilities.join(", "));
+  const [intendedCustomers, setIntendedCustomers] = useState(product.intendedCustomers);
+  const [limitations, setLimitations] = useState(product.limitations);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function verify(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/products/${product.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "verified",
+          sourceUrl,
+          capabilities: capabilities
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean),
+          intendedCustomers,
+          limitations,
+        }),
+      });
+      const data = (await response.json()) as { product?: Product; error?: string };
+      if (!response.ok || !data.product) {
+        setMessage(data.error ?? "Could not verify product.");
+        return;
+      }
+      onUpdated(data.product);
+      setMessage("Product verified.");
+    } catch {
+      setMessage("Could not reach the product endpoint.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <article className="card">
       <div className="row">
@@ -667,6 +1225,48 @@ function ProductCard({ product }: { product: Product }) {
           )}
         </p>
       </div>
+
+      {product.status !== "verified" && (
+        <form onSubmit={verify} className="verify-form">
+          <label htmlFor={`source-${product.id}`}>Verification source URL</label>
+          <input
+            id={`source-${product.id}`}
+            type="url"
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            required
+            maxLength={500}
+          />
+          <label htmlFor={`capabilities-${product.id}`}>Capabilities (comma-separated)</label>
+          <input
+            id={`capabilities-${product.id}`}
+            value={capabilities}
+            onChange={(e) => setCapabilities(e.target.value)}
+            required
+            maxLength={1000}
+          />
+          <label htmlFor={`customers-${product.id}`}>Intended customers</label>
+          <input
+            id={`customers-${product.id}`}
+            value={intendedCustomers}
+            onChange={(e) => setIntendedCustomers(e.target.value)}
+            required
+            maxLength={500}
+          />
+          <label htmlFor={`limitations-${product.id}`}>Limitations</label>
+          <input
+            id={`limitations-${product.id}`}
+            value={limitations}
+            onChange={(e) => setLimitations(e.target.value)}
+            required
+            maxLength={500}
+          />
+          <button type="submit" className="primary" disabled={busy}>
+            {busy ? "Verifying…" : "Mark product verified"}
+          </button>
+          {message && <p className="small form-error">{message}</p>}
+        </form>
+      )}
       <a href={product.showroomUrl} target="_blank" rel="noopener noreferrer">
         Open NOFA showroom ↗
       </a>

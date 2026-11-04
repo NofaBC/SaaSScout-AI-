@@ -38,6 +38,7 @@ export interface Store {
   updateProduct(id: string, patch: ProductPatch, actorEmail: string): Promise<Product>;
   createDraft(input: DraftInput): Promise<Draft>;
   getDraft(id: string): Promise<Draft | null>;
+  updateDraft(id: string, patch: { subject: string; body: string }): Promise<Draft>;
   approveDraft(id: string, actorEmail: string): Promise<Draft>;
   findSendByIdempotencyKey(key: string): Promise<SendRecord | null>;
   createSendAttempt(input: {
@@ -327,6 +328,32 @@ export abstract class BaseStore implements Store {
   async getDraft(id: string): Promise<Draft | null> {
     await this.queue;
     return structuredClone(this.data.drafts.find((d) => d.id === id) ?? null);
+  }
+
+  async updateDraft(id: string, patch: { subject: string; body: string }): Promise<Draft> {
+    return this.enqueue(async () => {
+      const draft = this.data.drafts.find((d) => d.id === id);
+      if (!draft) throw new NotFoundError("Draft not found.");
+      if (draft.status === "sent") {
+        throw new ConflictError("A sent draft cannot be edited.");
+      }
+      draft.subject = patch.subject;
+      draft.body = patch.body;
+      draft.version += 1;
+      draft.status = "draft";
+      draft.approvedAt = null;
+      draft.approvedBy = null;
+      draft.updatedAt = nowIso();
+      this.activity(
+        this.data.workspace.ownerEmail,
+        "draft.edited",
+        "draft",
+        draft.id,
+        `Edited draft version ${draft.version}; approval was reset.`,
+      );
+      await this.persist();
+      return structuredClone(draft);
+    });
   }
 
   async approveDraft(id: string, actorEmail: string): Promise<Draft> {

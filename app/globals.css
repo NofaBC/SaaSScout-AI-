@@ -479,6 +479,77 @@ textarea {
   margin-top: 10px;
 }
 
+.discovery-panel {
+  margin-bottom: 18px;
+}
+
+.discovery-message {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  background: #f3f0ff;
+  color: #4f3ca8;
+}
+
+.verify-form {
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 6px;
+}
+
+/* Review dialog */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #101a356b;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.review-modal {
+  width: min(760px, 96vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 100px #14203966;
+}
+
+.review-meta {
+  background: #f6f7fb;
+  border-radius: 9px;
+  padding: 12px 15px;
+  margin: 14px 0;
+}
+
+.review-meta p {
+  margin: 4px 0;
+}
+
+.review-body {
+  min-height: 300px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.send-success {
+  color: #087f6d;
+  font-size: 12px;
+  margin-top: 10px;
+}
+
 .toast {
   position: fixed;
   bottom: 24px;
@@ -598,5 +669,13 @@ textarea {
   .login-card,
   .login-aside {
     padding: 36px 24px;
+  }
+
+  .review-modal {
+    padding: 18px;
+  }
+
+  .modal-actions button {
+    flex: 1 1 100%;
   }
 }

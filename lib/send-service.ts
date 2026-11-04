@@ -1,12 +1,12 @@
+import { HttpError } from "./errors";
 import { hashIdempotency, normalizeEmail } from "./ids";
 import { MockMailer, type Mailer } from "./mailer";
+import { UncertainSendError } from "./send-errors";
 import type { Store } from "./store/base";
 import { ConflictError, NotFoundError } from "./store/base";
 import type { SendRecord } from "./types";
 
-export class UncertainSendError extends Error {
-  readonly code = "SEND_RESULT_UNCERTAIN";
-}
+export { UncertainSendError };
 
 export async function sendApprovedDraft(
   store: Store,
@@ -77,6 +77,10 @@ export async function sendApprovedDraft(
     if (error instanceof UncertainSendError) {
       return store.failSend(attempt.id, "uncertain", error.code);
     }
-    return store.failSend(attempt.id, "failed", "SEND_FAILED");
+    const failed = await store.failSend(attempt.id, "failed", "SEND_FAILED");
+    if (error instanceof HttpError) {
+      throw new HttpError(error.status, error.message, error.code);
+    }
+    return failed;
   }
 }

@@ -4,3 +4,7 @@ import "./store.test";
 import "./csv.test";
 import "./validation.test";
 import "./send.test";
+import "./exa.test";
+import "./matching.test";
+import "./outreach.test";
+import "./gmail.test";

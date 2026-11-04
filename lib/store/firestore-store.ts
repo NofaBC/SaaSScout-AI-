@@ -316,6 +316,41 @@ export class FirestoreStore implements Store {
     return doc.exists ? ({ id: doc.id, ...doc.data() } as Draft) : null;
   }
 
+  async updateDraft(id: string, patch: { subject: string; body: string }): Promise<Draft> {
+    const ref = this.collection("drafts").doc(id);
+    return this.db().runTransaction(async (tx) => {
+      const doc = await tx.get(ref);
+      if (!doc.exists) throw new NotFoundError("Draft not found.");
+      const draft = { id: doc.id, ...doc.data() } as Draft;
+      if (draft.status === "sent") throw new ConflictError("A sent draft cannot be edited.");
+      draft.subject = patch.subject;
+      draft.body = patch.body;
+      draft.version += 1;
+      draft.status = "draft";
+      draft.approvedAt = null;
+      draft.approvedBy = null;
+      draft.updatedAt = nowIso();
+      tx.update(ref, {
+        subject: draft.subject,
+        body: draft.body,
+        version: draft.version,
+        status: draft.status,
+        approvedAt: null,
+        approvedBy: null,
+        updatedAt: draft.updatedAt,
+      });
+      const activity = this.activity(
+        ownerEmail(),
+        "draft.edited",
+        "draft",
+        id,
+        `Edited draft version ${draft.version}; approval was reset.`,
+      );
+      tx.set(this.collection("activities").doc(activity.id), asActivity(activity));
+      return draft;
+    });
+  }
+
   async approveDraft(id: string, actorEmail: string): Promise<Draft> {
     const ref = this.collection("drafts").doc(id);
     return this.db().runTransaction(async (tx) => {
