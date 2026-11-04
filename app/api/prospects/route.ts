@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
-import { errorResponse, HttpError } from "@/lib/http";
+import { assertSameOrigin, errorResponse, HttpError } from "@/lib/http";
 import { getStore } from "@/lib/store";
 import { parseWithSchema, prospectInputSchema } from "@/lib/validation";
 
@@ -16,6 +16,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const owner = await requireOwner();
     const store = await getStore();
     const limit = await store.consumeRateLimit(`prospect:create:${owner.email}`, 30, 60 * 60 * 1000);

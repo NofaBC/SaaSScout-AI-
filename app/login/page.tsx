@@ -1,13 +1,17 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { isMockAuth, mockOwnerCode, ownerEmail } from "@/lib/config";
+import { firebaseAdminConfigured } from "@/lib/firebase/admin";
+import { firebaseClientConfigured } from "@/lib/firebase/public-config";
 import LoginForm from "./LoginForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
-  const session = await getSession();
-  if (session) redirect("/app");
+  const ready = firebaseClientConfigured() && firebaseAdminConfigured();
+  if (ready) {
+    const session = await getSession();
+    if (session) redirect("/app");
+  }
 
   return (
     <main className="login-page">
@@ -21,37 +25,34 @@ export default async function LoginPage() {
         </div>
         <h1>One workspace. Real prospects. Controlled outreach.</h1>
         <p className="muted">
-          This checkpoint uses a mock owner sign-in because Firebase credentials are not configured.
-          The owner email and signed server session are enforced; this is not production authentication.
+          Continue with the authorized NOFA Google account. Firebase verifies the identity, and the
+          server also verifies the owner email before creating an HttpOnly session.
         </p>
 
-        {!mockOwnerCode() && (
+        {!ready && (
           <div className="warning" role="alert">
-            Mock owner login is disabled until <span className="mono">MOCK_OWNER_CODE</span> is set
-            to at least 8 characters in the server environment.
+            Firebase is not configured for this deployment. Add the Firebase web configuration and
+            Admin service account to the preview environment, then redeploy. No mock login is enabled.
           </div>
         )}
 
-        <LoginForm
-          defaultEmail={ownerEmail()}
-          configured={Boolean(mockOwnerCode())}
-          mockMode={isMockAuth()}
-        />
+        <LoginForm configured={ready} />
       </section>
       <aside className="login-aside">
         <div>
-          <div className="eyebrow">PHASE 1 CHECKPOINT</div>
+          <div className="eyebrow">FOUNDATION CHECKPOINT</div>
           <h2>What is real in this build</h2>
           <ul>
-            <li>Signed owner session and server-side authorization.</li>
-            <li>Persistent local prospect, note, stage, catalog, and CSV records.</li>
-            <li>Mock send boundary with duplicate prevention.</li>
+            <li>Firebase Authentication with an owner-email allowlist.</li>
+            <li>HttpOnly Firebase session cookie verified server-side.</li>
+            <li>Firestore persistence and server-only write routes.</li>
+            <li>Origin checks for state-changing requests.</li>
           </ul>
-          <h2>What is intentionally not connected</h2>
+          <h2>Still intentionally disabled</h2>
           <ul>
-            <li>Exa live discovery (Phase 2).</li>
-            <li>AI matching and drafting (Phase 3).</li>
-            <li>Google OAuth and real Gmail sending (Phase 4).</li>
+            <li>Live Exa discovery.</li>
+            <li>AI matching and drafting.</li>
+            <li>Google Gmail OAuth and real sending.</li>
           </ul>
         </div>
         <p className="caption">SaaSScout AI™ · A NOFA AI Factory™ concept · B2B only</p>

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
-import { errorResponse } from "@/lib/http";
+import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { getStore } from "@/lib/store";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
+    assertSameOrigin(request);
     const owner = await requireOwner();
     const { id } = await context.params;
     const store = await getStore();

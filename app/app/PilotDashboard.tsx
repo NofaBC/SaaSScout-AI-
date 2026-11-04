@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { signOutOwner } from "@/lib/firebase/client";
 import type {
   ClaimType,
   Product,
@@ -39,12 +40,10 @@ const EMPTY_FORM = {
 export default function PilotDashboard({
   initial,
   ownerEmail,
-  authMode,
   mailMode,
 }: {
   initial: StoreSnapshot;
   ownerEmail: string;
-  authMode: "mock" | "firebase";
   mailMode: "mock" | "gmail";
 }) {
   const [tab, setTab] = useState<Tab>("discover");
@@ -128,6 +127,11 @@ export default function PilotDashboard({
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await signOutOwner();
+    } catch {
+      // The server session is already cleared.
+    }
     window.location.href = "/login";
   }
 
@@ -161,9 +165,7 @@ export default function PilotDashboard({
         <div className="sidebottom">
           <p>NOFA owner workspace</p>
           <p>{ownerEmail}</p>
-          <p className="tiny">
-            {authMode === "mock" ? "MOCK AUTH" : "FIREBASE AUTH"} · {mailMode.toUpperCase()} MAIL
-          </p>
+          <p className="tiny">FIREBASE AUTH · {mailMode.toUpperCase()} MAIL</p>
         </div>
       </aside>
 

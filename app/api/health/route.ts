@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
-import { appMode, mailMode } from "@/lib/config";
+import { mailMode } from "@/lib/config";
+import { firebaseAdminConfigured } from "@/lib/firebase/admin";
+import { firebaseClientConfigured } from "@/lib/firebase/public-config";
 
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    authMode: appMode(),
+    authMode: "firebase",
+    firebaseClientConfigured: firebaseClientConfigured(),
+    firebaseAdminConfigured: firebaseAdminConfigured(),
     mailMode: mailMode(),
-    storeDriver: process.env.STORE_DRIVER ?? "json",
+    storeDriver: "firestore",
     realGmailConfigured: false,
     realDiscoveryConfigured: false,
     realAiConfigured: false,

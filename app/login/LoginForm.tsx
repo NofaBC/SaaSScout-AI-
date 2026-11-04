@@ -1,18 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import {
+  getIdToken,
+  signInOwnerWithGoogle,
+  signOutOwner,
+} from "@/lib/firebase/client";
 
-export default function LoginForm({
-  defaultEmail,
-  configured,
-  mockMode,
-}: {
-  defaultEmail: string;
-  configured: boolean;
-  mockMode: boolean;
-}) {
-  const [email, setEmail] = useState(defaultEmail);
-  const [code, setCode] = useState("");
+export default function LoginForm({ configured }: { configured: boolean }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -22,19 +17,31 @@ export default function LoginForm({
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/auth/login", {
+      const user = await signInOwnerWithGoogle();
+      const idToken = await getIdToken(user);
+      const response = await fetch("/api/auth/session", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code }),
+        headers: { Authorization: `Bearer ${idToken}` },
+        credentials: "same-origin",
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) {
+        await signOutOwner();
         setError(data.error ?? "Sign-in failed.");
         return;
       }
       window.location.href = "/app";
-    } catch {
-      setError("Could not reach the server.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error && caught.message.includes("popup")
+          ? "Google sign-in was cancelled or blocked."
+          : "Could not complete Google sign-in.",
+      );
+      try {
+        await signOutOwner();
+      } catch {
+        // The popup may never have completed; nothing to sign out.
+      }
     } finally {
       setBusy(false);
     }
@@ -42,39 +49,17 @@ export default function LoginForm({
 
   return (
     <form className="login-form" onSubmit={submit}>
-      <label htmlFor="email">Owner email</label>
-      <input
-        id="email"
-        type="email"
-        autoComplete="username"
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-        required
-        maxLength={254}
-      />
-      <label htmlFor="code">Mock access code</label>
-      <input
-        id="code"
-        type="password"
-        autoComplete="current-password"
-        value={code}
-        onChange={(event) => setCode(event.target.value)}
-        required
-        minLength={8}
-        maxLength={200}
-        disabled={!configured}
-      />
+      <button className="primary full" type="submit" disabled={busy || !configured}>
+        {busy ? "Opening Google…" : "Continue with Google"}
+      </button>
       {error && (
         <p className="form-error" role="alert">
           {error}
         </p>
       )}
-      <button className="primary full" type="submit" disabled={busy || !configured}>
-        {busy ? "Signing in…" : mockMode ? "Enter owner workspace (mock)" : "Enter workspace"}
-      </button>
       <p className="small muted">
-        The mock access code is a development credential. It must not be reused for production or
-        shared outside the pilot owner.
+        Use `nofabusinessconsulting@gmail.com`. Any other Google account is rejected by the server
+        and by Firestore rules.
       </p>
     </form>
   );

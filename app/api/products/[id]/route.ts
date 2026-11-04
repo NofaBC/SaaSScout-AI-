@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
-import { errorResponse } from "@/lib/http";
+import { assertSameOrigin, errorResponse } from "@/lib/http";
 import { getStore } from "@/lib/store";
 import { parseWithSchema, productPatchSchema } from "@/lib/validation";
 
@@ -9,6 +9,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
+    assertSameOrigin(request);
     const owner = await requireOwner();
     const { id } = await context.params;
     const body = await request.json();

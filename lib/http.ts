@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { HttpError } from "./errors";
+import { assertSameOrigin } from "./origin";
 import { ConflictError, NotFoundError, ValidationError } from "./store/base";
 
-export { HttpError };
+export { HttpError, assertSameOrigin };
 
 export function errorResponse(error: unknown): NextResponse {
   if (error instanceof HttpError) {

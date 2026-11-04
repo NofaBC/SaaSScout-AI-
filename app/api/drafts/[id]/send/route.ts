@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireOwner } from "@/lib/auth";
-import { errorResponse, HttpError } from "@/lib/http";
+import { assertSameOrigin, errorResponse, HttpError } from "@/lib/http";
 import { getMailer } from "@/lib/mailer";
 import { sendApprovedDraft } from "@/lib/send-service";
 import { getStore } from "@/lib/store";
@@ -11,6 +11,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
+    assertSameOrigin(request);
     const owner = await requireOwner();
     const store = await getStore();
     const limit = await store.consumeRateLimit(`send:${owner.email}`, 5, 24 * 60 * 60 * 1000);
